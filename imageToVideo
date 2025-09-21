@@ -1,0 +1,63 @@
+Add-Type -AssemblyName System.Windows.Forms
+
+# Select the GIF
+$gifDialog = New-Object System.Windows.Forms.OpenFileDialog
+$gifDialog.Title = "Select the GIF"
+$gifDialog.Filter = "GIF Files (*.gif)|*.gif"
+$gifDialog.Multiselect = $false
+if ($gifDialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+    $gifPath = $gifDialog.FileName
+} else { exit }
+
+# Select images
+$imageDialog = New-Object System.Windows.Forms.OpenFileDialog
+$imageDialog.Title = "Select Images to Edit"
+$imageDialog.Filter = "Image Files (*.png;*.jpg;*.jpeg)|*.png;*.jpg;*.jpeg"
+$imageDialog.Multiselect = $true
+if ($imageDialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+    $imagePathsArray = $imageDialog.FileNames
+} else { exit }
+
+# Select output folder
+$folderDialog = New-Object System.Windows.Forms.FolderBrowserDialog
+$folderDialog.Description = "Select the folder where videos will be saved"
+if ($folderDialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+    $outputFolder = $folderDialog.SelectedPath
+} else { exit }
+
+# Duration
+[void][System.Reflection.Assembly]::LoadWithPartialName("Microsoft.VisualBasic")
+$duration = [Microsoft.VisualBasic.Interaction]::InputBox("Enter the duration in seconds for each video:", "Video Duration", "5")
+
+# GIF width percentage
+$gifPercent = [Microsoft.VisualBasic.Interaction]::InputBox("Enter the GIF width as a percentage of the image width (e.g., 20 for 20%):", "GIF Width Percentage", "20")
+
+# Process images
+foreach ($image in $imagePathsArray) {
+    # Get image width
+    $imageInfo = ffmpeg -i $image 2>&1 | Select-String "Stream.*Video"
+    if ($imageInfo -match "(\d+)x(\d+)") {
+        $imgWidth = [int]$matches[1]
+    } else {
+        Write-Host "Could not get dimensions for $image, skipping."
+        continue
+    }
+
+    # Calculate GIF width in pixels
+    $gifWidthPx = [math]::Round($imgWidth * ($gifPercent / 100))
+
+    # Output path
+    $baseName = [System.IO.Path]::GetFileNameWithoutExtension($image)
+    $outputVideo = Join-Path $outputFolder "$baseName.mp4"
+
+    # FFmpeg overlay command with even dimensions fix
+    ffmpeg -y -i $image -ignore_loop 0 -i $gifPath `
+        -filter_complex "[1:v]scale=${gifWidthPx}:-1[gif];[0:v][gif]overlay=10:main_h-overlay_h-10,scale=ceil(iw/2)*2:ceil(ih/2)*2" `
+        -t $duration `
+        -pix_fmt yuv420p `
+        $outputVideo
+
+    Write-Host "Created video: $outputVideo"
+}
+
+Write-Host "All videos created successfully!"
