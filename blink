@@ -1,0 +1,46 @@
+Add-Type -AssemblyName System.Windows.Forms
+
+# Function to select a file via File Explorer
+function Select-File($title) {
+    $ofd = New-Object System.Windows.Forms.OpenFileDialog
+    $ofd.Filter = "Images|*.jpg;*.jpeg;*.png"
+    $ofd.Title = $title
+    if ($ofd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        return $ofd.FileName
+    } else {
+        Write-Host "No file selected. Exiting."
+        exit
+    }
+}
+
+# Select background image
+$bgFile = Select-File "Select the background image"
+
+# Select blink image
+$blinkFile = Select-File "Select the blink image"
+
+# Ask for output filename
+$outputFileDialog = New-Object System.Windows.Forms.SaveFileDialog
+$outputFileDialog.Filter = "MP4 Video|*.mp4"
+$outputFileDialog.Title = "Select output video file name"
+if ($outputFileDialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+    $outputFile = $outputFileDialog.FileName
+} else {
+    Write-Host "No output file selected. Exiting."
+    exit
+}
+
+# Video settings
+$duration = 10      # total video length in seconds
+$fps = 30           # frames per second
+$blinkDuration = 1 / $fps   # duration of 1 frame
+$blinkInterval = 2  # blink every 2 seconds
+
+# Run FFmpeg
+ffmpeg -y -loop 1 -t $duration -i "$bgFile" -loop 1 -t $blinkDuration -i "$blinkFile" -filter_complex `
+"[0:v]fps=$fps,scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2[v0]; `
+ [1:v]fps=$fps,scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2[v1]; `
+ [v0][v1]overlay=0:0:enable='eq(mod(t,$blinkInterval),0)'" `
+-r $fps -c:v libx264 -pix_fmt yuv420p "$outputFile"
+
+Write-Host "Video created: $outputFile"
